@@ -47,11 +47,11 @@
 
             const overpassQuery = (timestamp) => `[
 out:json][timeout:25][date:"${timestamp}"];
-            area[name="${country}"]->.searchArea;
+            relation["boundary"="administrative"]["name"~"${country}"] -> .admin_boundary;
             (
-                node["power"](area.searchArea);
-                way["power"](area.searchArea);
-                relation["power"](area.searchArea);
+                node["power"~"line|substation|transformer|generator|switch|busbar"](area.admin_boundary);
+                way["power"~"line|substation|transformer|generator|switch|busbar"](area.admin_boundary);
+                relation["power"~"line|substation|transformer|generator|switch|busbar"](area.admin_boundary);
             );
             out body;`;
 
