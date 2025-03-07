@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSM Power Grid Difference</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-control-geocoder/2.4.0/Control.Geocoder.js"></script>
+    <style>
+        #map {
+            height: 500px;
+        }
+
+        .controls {
+            margin: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>OSM Power Grid Difference Viewer</h2>
+    <div class="controls">
+        <label>Country: <input type="text" id="country" placeholder="Enter country name"></label>
+        <label>Timestamp 1: <input type="datetime-local" id="timestamp1"></label>
+        <label>Timestamp 2: <input type="datetime-local" id="timestamp2"></label>
+        <button onclick="fetchData()">Compare</button>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        async function fetchData() {
+            const country = document.getElementById('country').value;
+            const timestamp1 = document.getElementById('timestamp1').value;
+            const timestamp2 = document.getElementById('timestamp2').value;
+
+            if (!country || !timestamp1 || !timestamp2) {
+                alert('Please fill in all fields.');
+                return;
+            }
+
+            const overpassQuery = (timestamp) => `[
+out:json][timeout:25][date:"${timestamp}"];
+            area["name"="${country}"]->.searchArea;
+            (
+                nwr["power"="substation"](area.searchArea);
+                nwr["power"="line"](area.searchArea);
+                nwr["power"="tower"](area.searchArea);
+            );
+            out body;`;
+
+            const url1 = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery(timestamp1))}`;
+            const url2 = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery(timestamp2))}`;
+
+            const [data1, data2] = await Promise.all([fetch(url1).then(res => res.json()), fetch(url2).then(res => res.json())]);
+
+            processDifferences(data1, data2);
+        }
+
+        function processDifferences(data1, data2) {
+            const ids1 = new Set(data1.elements.map(e => e.id));
+            const ids2 = new Set(data2.elements.map(e => e.id));
+
+            const added = data2.elements.filter(e => !ids1.has(e.id));
+            const removed = data1.elements.filter(e => !ids2.has(e.id));
+
+            map.eachLayer(layer => { if (!!layer.toGeoJSON) map.removeLayer(layer); });
+
+            renderFeatures(added, 'green', 'Added');
+            renderFeatures(removed, 'red', 'Removed');
+        }
+
+        function renderFeatures(elements, color, type) {
+            elements.forEach(e => {
+                if (e.type === 'node') {
+                    L.circleMarker([e.lat, e.lon], { color }).addTo(map)
+                        .bindPopup(`${type}: ${e.tags.power || 'Unknown'}`);
+                } else if (e.type === 'way' && e.nodes) {
+                    const latlngs = e.nodes.map(nid => {
+                        const node = elements.find(el => el.id === nid);
+                        return node ? [node.lat, node.lon] : null;
+                    }).filter(Boolean);
+                    if (latlngs.length) {
+                        L.polyline(latlngs, { color }).addTo(map)
+                            .bindPopup(`${type}: ${e.tags.power || 'Unknown'}`);
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
