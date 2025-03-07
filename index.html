@@ -47,20 +47,32 @@
 
             const overpassQuery = (timestamp) => `[
 out:json][timeout:25][date:"${timestamp}"];
-            area["name"="${country}"]->.searchArea;
+            area[name="${country}"]->.searchArea;
             (
-                nwr["power"="substation"](area.searchArea);
-                nwr["power"="line"](area.searchArea);
-                nwr["power"="tower"](area.searchArea);
+                node["power"](area.searchArea);
+                way["power"](area.searchArea);
+                relation["power"](area.searchArea);
             );
             out body;`;
 
-            const url1 = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery(timestamp1))}`;
-            const url2 = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery(timestamp2))}`;
+            try {
+                const url1 = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery(timestamp1))}`;
+                const url2 = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery(timestamp2))}`;
 
-            const [data1, data2] = await Promise.all([fetch(url1).then(res => res.json()), fetch(url2).then(res => res.json())]);
+                const [response1, response2] = await Promise.all([fetch(url1), fetch(url2)]);
+                if (!response1.ok || !response2.ok) throw new Error('Error fetching data');
 
-            processDifferences(data1, data2);
+                const data1 = await response1.json();
+                const data2 = await response2.json();
+
+                console.log('Data at Timestamp 1:', data1);
+                console.log('Data at Timestamp 2:', data2);
+
+                processDifferences(data1, data2);
+            } catch (error) {
+                console.error('Failed to fetch Overpass API data:', error);
+                alert('Error fetching OpenStreetMap data. Please try again later.');
+            }
         }
 
         function processDifferences(data1, data2) {
@@ -78,7 +90,7 @@ out:json][timeout:25][date:"${timestamp}"];
 
         function renderFeatures(elements, color, type) {
             elements.forEach(e => {
-                if (e.type === 'node') {
+                if (e.type === 'node' && e.lat && e.lon) {
                     L.circleMarker([e.lat, e.lon], { color }).addTo(map)
                         .bindPopup(`${type}: ${e.tags.power || 'Unknown'}`);
                 } else if (e.type === 'way' && e.nodes) {
